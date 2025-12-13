@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <!-- Стили остались те же, сократил для краткости -->
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #f0f2f5; display: flex; height: 100vh; }
+        nav { width: 220px; background: #2c3e50; color: white; display: flex; flex-direction: column; }
+        nav h2 { text-align: center; padding: 20px 0; margin: 0; background: #1a252f; border-bottom: 1px solid #34495e; }
+        nav a { padding: 15px 20px; color: #bdc3c7; text-decoration: none; border-bottom: 1px solid #34495e; cursor: pointer; transition: 0.2s; }
+        nav a:hover, nav a.active { background: #34495e; color: white; border-left: 4px solid #3498db; }
+        main { flex: 1; padding: 25px; overflow: hidden; display: flex; flex-direction: column; }
+        .view-section { display: none; height: 100%; flex-direction: column; }
+        .view-section.active { display: flex; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #ecf0f1; color: #7f8c8d; font-weight: 600; text-transform: uppercase; font-size: 0.85em; }
+        tr:hover { background: #f8f9fa; cursor: pointer; }
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; }
+        .st-Idle { background: #ecf0f1; color: #7f8c8d; }
+        .st-Testing { background: #fff3cd; color: #856404; }
+        .st-Solved { background: #d4edda; color: #155724; }
+        .st-Failed { background: #f8d7da; color: #721c24; }
+        .st-Typing { background: #e3f2fd; color: #0d47a1; } /* Новый стиль для тайпинга */
+        #code-viewer { margin-top: 20px; flex: 1; background: #222; color: #0f0; padding: 15px; font-family: monospace; border-radius: 8px; overflow-y: auto; white-space: pre-wrap; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        .editor-layout { display: flex; height: 100%; gap: 20px; }
+        .task-list-sidebar { width: 250px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); overflow-y: auto; }
+        .task-item { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .task-item:hover { background: #f0f7ff; }
+        .task-form { flex: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); overflow-y: auto; }
+        input, textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        textarea.code { font-family: monospace; background: #f9f9f9; min-height: 100px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; color: #555; font-size: 0.9em; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        .btn-save { background: #3498db; color: white; }
+        .btn-new { width: 100%; background: #2ecc71; color: white; margin-bottom: 0; border-radius: 0; }
+    </style>
+</head>
+<body>
+
+<nav>
+    <h2>Галия Мырзановна?</h2>
+    <a onclick="switchView('monitor', this)" class="active">👀 Мониторинг</a>
+    <a onclick="switchView('tasks', this)">📝 Задачи</a>
+</nav>
+
+<main>
+    <!-- 1. МОНИТОРИНГ -->
+    <div id="view-monitor" class="view-section active">
+        <h3>Онлайн Мониторинг Класса</h3>
+        <table id="students-table">
+            <thead>
+                <tr>
+                    <th>Имя Ученика</th>
+                    <th>Очки</th>
+                    <th>Текущая задача</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody id="students-body"></tbody>
+        </table>
+
+        <div id="code-viewer">Выберите ученика, чтобы увидеть его код...</div>
+    </div>
+
+    <!-- 2. РЕДАКТОР ЗАДАЧ -->
+    <div id="view-tasks" class="view-section">
+        <div class="editor-layout">
+            <div class="task-list-sidebar">
+                <button class="btn-new" onclick="createNewTask()">+ Новая задача</button>
+                <div id="admin-task-list">Loading...</div>
+            </div>
+            <div class="task-form">
+                <h3>Редактирование задачи</h3>
+                <label>ID</label>
+                <input type="text" id="t-id">
+                <label>Название</label>
+                <input type="text" id="t-title">
+                <label>Описание</label>
+                <textarea id="t-desc" rows="3"></textarea>
+                <label>Стартовый код</label>
+                <textarea id="t-starter" class="code"></textarea>
+                <label>Тесты (Python assert)</label>
+                <textarea id="t-tests" class="code" placeholder="assert func(1)==2, 'Error'"></textarea>
+                <button class="btn-save" onclick="saveTask()">Сохранить задачу</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    const ws = new WebSocket("ws://" + location.host + "/ws");
+    let allStats = [];
+    let currentTasks = [];
+    let selectedUserId = null;
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === "global_stats") {
+            allStats = data.payload;
+            renderMonitor();
+            if (selectedUserId) updateViewer(selectedUserId);
+        }
+    };
+
+    function renderMonitor() {
+        const tbody = document.getElementById("students-body");
+        tbody.innerHTML = "";
+        allStats.sort((a, b) => b.total_score - a.total_score);
+
+        allStats.forEach(user => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td style="font-weight:600">${user.name || user.id}</td>
+                <td style="font-weight:bold; color:#2980b9;">${user.total_score}</td>
+                <td>${user.current_task_id || "-"}</td>
+                <td><span class="status-badge st-${user.status}">${user.status}</span></td>
+            `;
+            tr.onclick = () => openViewer(user.id);
+            if (user.id === selectedUserId) tr.style.background = "#e1f5fe";
+            tbody.appendChild(tr);
+        });
+    }
+
+    function openViewer(id) {
+        selectedUserId = id;
+        document.getElementById("code-viewer").style.display = "block";
+        updateViewer(id);
+        renderMonitor();
+    }
+
+    function updateViewer(id) {
+        const user = allStats.find(u => u.id === id);
+        if (user) {
+            document.getElementById("code-viewer").innerText = 
+                `// User: ${user.name} | Status: ${user.status}\n\n` + (user.last_code || "// No code yet");
+        }
+    }
+
+    // --- Task Manager ---
+    async function loadTasks() {
+        const res = await fetch('/api/tasks');
+        currentTasks = await res.json();
+        renderTaskList();
+    }
+    function renderTaskList() {
+        const list = document.getElementById("admin-task-list");
+        list.innerHTML = "";
+        currentTasks.forEach(t => {
+            const div = document.createElement("div");
+            div.className = "task-item";
+            div.innerText = t.title;
+            div.onclick = () => editTask(t.id);
+            list.appendChild(div);
+        });
+    }
+    function editTask(id) {
+        const task = currentTasks.find(t => t.id === id);
+        if(!task) return;
+        document.getElementById('t-id').value = task.id;
+        document.getElementById('t-title').value = task.title;
+        document.getElementById('t-desc').value = task.description;
+        document.getElementById('t-starter').value = task.starter_code;
+        const testsStr = (task.test_cases || []).map(tc => tc.code).join('\n');
+        document.getElementById('t-tests').value = testsStr;
+    }
+    function createNewTask() {
+        document.getElementById('t-id').value = "task-" + Date.now();
+        document.getElementById('t-title').value = "Новая задача";
+        document.getElementById('t-desc').value = "";
+        document.getElementById('t-starter').value = "def solve():\n    pass";
+        document.getElementById('t-tests').value = "assert solve() == 1, 'Error'";
+    }
+    async function saveTask() {
+        const rawTests = document.getElementById('t-tests').value.split('\n');
+        const testCases = rawTests.filter(t => t.trim().length > 0).map(t => ({ code: t, input: "", expected: "" }));
+        const task = {
+            id: document.getElementById('t-id').value,
+            title: document.getElementById('t-title').value,
+            description: document.getElementById('t-desc').value,
+            starter_code: document.getElementById('t-starter').value,
+            test_cases: testCases
+        };
+        await fetch('/api/tasks', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task) });
+        alert('Сохранено!');
+        loadTasks();
+    }
+    function switchView(viewName, element) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('nav a').forEach(el => el.classList.remove('active'));
+        document.getElementById('view-' + viewName).classList.add('active');
+        if(element) element.classList.add('active');
+        if (viewName === 'tasks') loadTasks();
+    }
+    loadTasks();
+</script>
+</body>
+</html>

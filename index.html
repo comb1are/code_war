@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python Academy Pro</title>
+    
+    <!-- 1. Шрифты -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- 2. CodeMirror (Редактор кода) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+
+    <!-- 3. Confetti (Салют) -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-dark: #1e1e1e;
+            --bg-sidebar: #252526;
+            --accent: #007acc;
+            --text-main: #cccccc;
+            --success: #4caf50;
+            --error: #f44336;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Настройка CodeMirror */
+        .CodeMirror {
+            flex: 1;
+            height: 100%;
+            font-family: 'Fira Code', monospace;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        /* SIDEBAR */
+        #sidebar { 
+            width: 300px; 
+            background: var(--bg-sidebar); 
+            border-right: 1px solid #333; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        
+        .sb-header { 
+            padding: 15px; 
+            font-weight: 600; 
+            text-transform: uppercase; 
+            color: #6f7075; 
+            font-size: 0.8em; 
+            letter-spacing: 1px; 
+        }
+        
+        #task-list { flex: 1; overflow-y: auto; }
+        
+        .task-item { 
+            padding: 12px 20px; 
+            cursor: pointer; 
+            border-left: 3px solid transparent; 
+            display: flex; 
+            justify-content: space-between; 
+            transition: 0.2s; 
+            align-items: center; 
+        }
+        .task-item:hover { background: #2a2d2e; color: white; }
+        .task-item.active { background: #37373d; border-left-color: var(--accent); color: white; }
+        .task-item.solved { color: var(--success); }
+        .task-icon { font-size: 1.1em; margin-right: 8px; }
+
+        #leaderboard-area { 
+            height: 30%; 
+            border-top: 1px solid #333; 
+            background: #1b1b1c; 
+            overflow-y: auto; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        
+        .lb-row { 
+            padding: 8px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            font-size: 0.9em; 
+            border-bottom: 1px solid #252526; 
+        }
+        .lb-row.me { background: rgba(0, 122, 204, 0.15); border-left: 3px solid var(--accent); color: white; }
+        .lb-score { color: #ffd700; font-family: 'Fira Code', monospace; font-weight: bold;}
+
+        /* FOOTER (Исправлено) */
+        #footer {
+            padding: 15px;
+            border-top: 1px solid #333;
+            text-align: center;
+            background: #1b1b1c;
+        }
+        #footer h2 {
+            font-size: 11px;
+            margin: 0 0 5px 0;
+            color: #666;
+            font-weight: normal;
+            text-transform: uppercase;
+        }
+        #footer a {
+            font-size: 12px;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        #footer a:hover { text-decoration: underline; }
+
+        /* MAIN AREA */
+        #main-area { flex: 1; display: flex; flex-direction: column; position: relative; }
+        
+        #task-info { padding: 20px; border-bottom: 1px solid #333; background: var(--bg-dark); max-height: 150px; overflow-y: auto; }
+        #task-title { font-size: 1.4em; color: white; margin-bottom: 8px; font-weight: 600; }
+        #task-desc { color: #9cdcfe; font-size: 0.95em; line-height: 1.5; }
+
+        #bottom-panel { height: 200px; background: #181818; border-top: 1px solid #333; display: flex; flex-direction: column; }
+        .toolbar { padding: 8px 20px; background: #252526; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+        
+        button.btn-run { background: var(--success); color: white; border: none; padding: 8px 18px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: 0.2s; font-family: 'Inter', sans-serif; }
+        button.btn-run:hover { filter: brightness(1.1); }
+        button.btn-run:active { transform: translateY(1px); }
+
+        #console-output { flex: 1; padding: 15px; font-family: 'Fira Code', monospace; white-space: pre-wrap; overflow-y: auto; font-size: 13px; color: #ccc; }
+        .console-success { color: var(--success) !important; border-left: 4px solid var(--success); background: rgba(76, 175, 80, 0.05); }
+        .console-error { color: #ff7b72 !important; border-left: 4px solid #ff7b72; background: rgba(255, 123, 114, 0.05); }
+
+        /* Login Modal */
+        #login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: center; z-index: 100; transition: opacity 0.3s; }
+        #login-box { background: #252526; padding: 40px; border-radius: 16px; text-align: center; width: 350px; border: 1px solid #444; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        #login-box h2 { margin: 0 0 10px 0; color: white; }
+        #login-box input { width: 100%; padding: 12px; margin: 25px 0; background: #333; border: 1px solid #444; color: white; border-radius: 6px; font-size: 16px; outline: none; transition: 0.2s; }
+        #login-box input:focus { border-color: var(--accent); background: #383838; }
+        #login-box button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; }
+        #login-box button:hover { background: #0062a3; }
+
+        /* Toast */
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: #333; color: white; padding: 12px 20px; border-radius: 6px; border-left: 4px solid var(--accent); box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: slideIn 0.3s; font-size: 0.9em; pointer-events: auto; display: flex; align-items: center; gap: 10px; }
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--error); }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <!-- Модальное окно входа -->
+    <div id="login-overlay">
+        <div id="login-box">
+            <h2>Python Academy</h2>
+            <p style="color:#888; margin:0;">Введи имя чтобы продолжить</p>
+            <input type="text" id="username-input" placeholder="Имя Фамилия" autocomplete="off">
+            <button onclick="login()">Войти в систему</button>
+        </div>
+    </div>
+
+    <!-- Уведомления -->
+    <div id="toast-container"></div>
+
+    <!-- Основной интерфейс -->
+    <div id="sidebar">
+        <div class="sb-header">Code Wars (git:comb1are)</div>
+        <div id="task-list"></div>
+        <div class="sb-header" style="border-top:1px solid #333;">Топ Учеников</div>
+        <div id="leaderboard-area"><div id="lb-list"></div></div>
+        
+        <!-- ФУТЕР ПЕРЕНЕСЕН СЮДА -->
+        <div id="footer">
+            <h2>Made by Vlad</h2>
+            <a href="https://github.com/comb1are" target="_blank">GitHub</a>
+        </div>
+    </div>
+
+    <div id="main-area">
+        <div id="task-info">
+            <div id="task-title">Загрузка...</div>
+            <div id="task-desc">Пожалуйста, выберите задание</div>
+        </div>
+
+        <div style="flex:1; overflow:hidden; position:relative;">
+            <textarea id="code-editor"></textarea>
+        </div>
+        
+        <div id="bottom-panel">
+            <div class="toolbar">
+                <span style="font-size:0.8em; font-weight:600; text-transform:uppercase; color:#888;">Терминал вывода</span>
+                <button class="btn-run" onclick="submitCode()">
+                    <span style="font-size: 1.2em;">▶</span> Запустить тест (Ctrl+Enter)
+                </button>
+            </div>
+            <div id="console-output">// Ожидание запуска кода...</div>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let myName = "";
+        let codeMirror;
+        
+        document.addEventListener("DOMContentLoaded", () => {
+            codeMirror = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+                mode: "python",
+                theme: "dracula",
+                lineNumbers: true,
+                autoCloseBrackets: true,
+                indentUnit: 4,
+                matchBrackets: true,
+                extraKeys: {
+                    "Ctrl-Enter": function(cm) { submitCode(); },
+                    "Tab": function(cm) { 
+                        if (cm.somethingSelected()) { cm.indentSelection("add"); } 
+                        else { cm.replaceSelection("    ", "end"); }
+                    }
+                }
+            });
+
+            let timeout;
+            codeMirror.on("change", (cm, change) => {
+                if (change.origin === 'setValue') return; 
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                     if(ws && ws.readyState === WebSocket.OPEN) {
+                         ws.send(JSON.stringify({ type: "code_update", payload: cm.getValue() }));
+                     }
+                }, 800);
+            });
+        });
+
+        function checkCookie() {
+            const match = document.cookie.match(new RegExp('(^| )username=([^;]+)'));
+            if (match) {
+                myName = decodeURIComponent(match[2]);
+                hideLogin();
+                connectWs(myName);
+            }
+        }
+
+        function login() {
+            const name = document.getElementById("username-input").value.trim();
+            if (!name) return showToast("Пожалуйста, введите имя!", "error");
+            
+            document.cookie = `username=${encodeURIComponent(name)}; path=/; max-age=31536000`;
+            myName = name;
+            hideLogin();
+            connectWs(myName);
+            showToast(`Добро пожаловать, ${name}!`);
+        }
+
+        function hideLogin() {
+            const overlay = document.getElementById("login-overlay");
+            overlay.style.opacity = "0";
+            setTimeout(() => overlay.style.display = "none", 300);
+        }
+
+        function connectWs(name) {
+            ws = new WebSocket(`ws://${location.host}/ws?name=${encodeURIComponent(name)}`);
+            ws.onopen = () => console.log("WS Connected");
+            ws.onmessage = handleMessage;
+            ws.onclose = () => {
+                showToast("Связь с сервером потеряна...", "error");
+                setTimeout(() => connectWs(name), 3000);
+            };
+        }
+
+        let allTasks = [];
+        let solvedTasks = {};
+        let currentTaskId = "";
+        let codeDrafts = {}; 
+        let myId = "";
+
+        const consoleDiv = document.getElementById("console-output");
+
+        function handleMessage(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "task_list") {
+                allTasks = data.payload;
+                renderTaskList();
+            }
+            else if (data.type === "user_stats") {
+                myId = data.payload.id;
+                solvedTasks = data.payload.solved_tasks;
+                renderTaskList();
+            }
+            else if (data.type === "test_result") {
+                consoleDiv.innerText = data.payload.stdout;
+                
+                if (data.payload.success) {
+                    consoleDiv.className = "console-success";
+                    fireConfetti(); 
+                    showToast("Поздравляем! Задача решена!", "success");
+                    solvedTasks[data.payload.task_id] = true;
+                    renderTaskList();
+                } else {
+                    consoleDiv.className = "console-error";
+                    showToast("Тесты не пройдены. Проверьте вывод.", "error");
+                }
+            }
+            else if (data.type === "global_stats") {
+                renderLeaderboard(data.payload);
+            }
+        }
+
+        function fireConfetti() {
+            var count = 200;
+            var defaults = { origin: { y: 0.7 } };
+            function fire(particleRatio, opts) {
+                confetti(Object.assign({}, defaults, opts, {
+                    particleCount: Math.floor(count * particleRatio)
+                }));
+            }
+            fire(0.25, { spread: 26, startVelocity: 55 });
+            fire(0.2, { spread: 60 });
+            fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+            fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+            fire(0.1, { spread: 120, startVelocity: 45 });
+        }
+
+        function renderTaskList() {
+            const list = document.getElementById("task-list");
+            list.innerHTML = "";
+            allTasks.forEach(task => {
+                const isSolved = solvedTasks[task.id];
+                const isActive = task.id === currentTaskId;
+                const div = document.createElement("div");
+                div.className = `task-item ${isActive ? 'active' : ''} ${isSolved ? 'solved' : ''}`;
+                const icon = isSolved ? '✅' : (isActive ? '📝' : '📄');
+                div.innerHTML = `<div style="display:flex; align-items:center;"><span class="task-icon">${icon}</span> ${task.title}</div>`;
+                div.onclick = () => selectTask(task.id);
+                list.appendChild(div);
+            });
+        }
+
+        function renderLeaderboard(stats) {
+            const list = document.getElementById("lb-list");
+            list.innerHTML = "";
+            stats.sort((a, b) => b.total_score - a.total_score);
+            stats.forEach((u, i) => {
+                const div = document.createElement("div");
+                div.className = `lb-row ${u.id === myId ? 'me' : ''}`;
+                let rank = `#${i+1}`;
+                if (i===0) rank = "🥇"; else if (i===1) rank = "🥈"; else if (i===2) rank = "🥉";
+                div.innerHTML = `<span>${rank} ${u.name || u.id}</span> <span class="lb-score">${u.total_score}</span>`;
+                list.appendChild(div);
+            });
+        }
+
+        function selectTask(id) {
+            if (currentTaskId && codeMirror) codeDrafts[currentTaskId] = codeMirror.getValue();
+            currentTaskId = id;
+            const task = allTasks.find(t => t.id === id);
+            
+            document.getElementById("task-title").innerText = task.title;
+            document.getElementById("task-desc").innerText = task.description;
+            
+            if (codeDrafts[id]) {
+                codeMirror.setValue(codeDrafts[id]);
+            } else {
+                codeMirror.setValue(task.starter_code);
+            }
+
+            ws.send(JSON.stringify({ type: "select_task", payload: id }));
+            renderTaskList();
+            consoleDiv.innerText = "// Задача выбрана. Нажмите Ctrl+Enter для запуска.";
+            consoleDiv.className = "";
+        }
+
+        function submitCode() {
+            if (!currentTaskId) return showToast("Выберите задачу из списка", "error");
+            consoleDiv.innerText = "Запуск тестов в песочнице...";
+            consoleDiv.className = "";
+            ws.send(JSON.stringify({ type: "submit", payload: codeMirror.getValue() }));
+        }
+
+        function showToast(msg, type="info") {
+            const container = document.getElementById("toast-container");
+            const box = document.createElement("div");
+            box.className = `toast ${type}`;
+            const icon = type === "success" ? "🎉" : (type === "error" ? "⛔" : "ℹ️");
+            box.innerHTML = `<span>${icon}</span> ${msg}`;
+            container.appendChild(box);
+            setTimeout(() => {
+                box.style.animation = "slideIn 0.3s reverse forwards"; 
+                setTimeout(()=>box.remove(), 300);
+            }, 3000);
+        }
+
+        document.getElementById("username-input").addEventListener("keydown", (e) => {
+            if (e.key === "Enter") login();
+        });
+
+        checkCookie();
+    </script>
+</body>
+</html>
