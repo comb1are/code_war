@@ -24,14 +24,23 @@ func (t Task) Sanitize() Task {
 	}
 }
 
+// Снимок состояния кода
+type CodeSnapshot struct {
+	Timestamp int64  `json:"ts"`
+	Code      string `json:"code"`
+}
+
 type UserStats struct {
 	ID            string          `json:"id"`
-	Name          string          `json:"name"` // <-- НОВОЕ ПОЛЕ
+	Name          string          `json:"name"`
 	TotalScore    int             `json:"total_score"`
 	CurrentTaskID string          `json:"current_task_id"`
 	SolvedTasks   map[string]bool `json:"solved_tasks"`
 	LastCode      string          `json:"last_code"`
 	Status        string          `json:"status"`
+	PasteContent  string          `json:"paste_content"`
+	// ИСТОРИЯ ИЗМЕНЕНИЙ (Time Travel)
+	History []CodeSnapshot `json:"history"`
 }
 
 type IncomingMessage struct {

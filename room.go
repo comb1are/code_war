@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"time"
 )
 
 type Room struct {
@@ -28,11 +29,10 @@ func newRoom(id string) *Room {
 	}
 
 	return &Room{
-		ID:        id,
-		clients:   make(map[*Client]bool),
-		userStats: make(map[string]*UserStats),
-		AllTasks:  tasks,
-
+		ID:         id,
+		clients:    make(map[*Client]bool),
+		userStats:  make(map[string]*UserStats),
+		AllTasks:   tasks,
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan *ClientMessage),
@@ -65,24 +65,21 @@ func (r *Room) run() {
 			if _, exists := r.userStats[client.ID]; !exists {
 				r.userStats[client.ID] = &UserStats{
 					ID:          client.ID,
-					Name:        client.Name, // <-- Сохраняем имя
+					Name:        client.Name,
 					SolvedTasks: make(map[string]bool),
 					Status:      "Idle",
+					History:     make([]CodeSnapshot, 0), // Инициализация
 				}
 			} else {
-				// Если перезашел - обновляем имя (вдруг сменил)
 				r.userStats[client.ID].Name = client.Name
 			}
 			r.mu.Unlock()
-
 			r.sendTaskList(client)
 			r.broadcastAdminStats()
 
 		case client := <-r.unregister:
 			r.mu.Lock()
 			delete(r.clients, client)
-			// Мы НЕ удаляем статистику при выходе, чтобы при рефреше очки оставались
-			// delete(r.userStats, client.ID) <-- закомментировано специально
 			r.mu.Unlock()
 			r.broadcastAdminStats()
 
@@ -100,13 +97,28 @@ func (r *Room) handleMessage(msg *ClientMessage) {
 		r.updateUserCode(msg.client.ID, msg.content.Payload)
 	case "select_task":
 		r.handleTaskSelection(msg.client, msg.content.Payload)
+	case "cheat_warning":
+		r.flagCheater(msg.client.ID, msg.content.Payload)
 	}
+}
+
+func (r *Room) flagCheater(userID, content string) {
+	r.mu.Lock()
+	if stats, ok := r.userStats[userID]; ok {
+		stats.Status = "⚠️ COPIED!"
+		stats.PasteContent = content
+	}
+	r.mu.Unlock()
+	r.broadcastAdminStats()
 }
 
 func (r *Room) handleTaskSelection(client *Client, taskID string) {
 	r.mu.Lock()
 	if stats, ok := r.userStats[client.ID]; ok {
 		stats.CurrentTaskID = taskID
+		if stats.Status == "⚠️ COPIED!" {
+			stats.Status = "Idle"
+		}
 	}
 	r.mu.Unlock()
 	r.broadcastAdminStats()
@@ -116,15 +128,21 @@ func (r *Room) updateUserCode(userID, code string) {
 	r.mu.Lock()
 	if stats, ok := r.userStats[userID]; ok {
 		stats.LastCode = code
-		// Не меняем статус на Typing, если уже Solved, чтобы не сбивать зеленая галочку в админке
-		if stats.Status != "Solved" {
+		if stats.Status != "Solved" && stats.Status != "⚠️ COPIED!" {
 			stats.Status = "Typing"
+		}
+
+		// Добавляем снепшот только если код изменился
+		if len(stats.History) == 0 || stats.History[len(stats.History)-1].Code != code {
+			stats.History = append(stats.History, CodeSnapshot{
+				Timestamp: time.Now().UnixMilli(),
+				Code:      code,
+			})
 		}
 	}
 	r.mu.Unlock()
-	// Опционально: можно тут вызвать r.broadcastAdminStats(), но это будет спам.
-	// Лучше пусть админ получает обновления при следующем любом событии или периодически.
-	// Но для live-просмотра кода включим это:
+
+	// ВАЖНО: Включаем рассылку обновлений при печати, чтобы Replay обновлялся в реальном времени
 	go r.broadcastAdminStats()
 }
 
@@ -132,7 +150,6 @@ func (r *Room) processSubmission(player *Client, code string) {
 	r.mu.RLock()
 	stats := r.userStats[player.ID]
 	taskID := stats.CurrentTaskID
-
 	var currentTask Task
 	found := false
 	for _, t := range r.AllTasks {
@@ -149,14 +166,22 @@ func (r *Room) processSubmission(player *Client, code string) {
 	}
 
 	r.mu.Lock()
-	stats.Status = "Testing"
+	if stats.Status != "⚠️ COPIED!" {
+		stats.Status = "Testing"
+	}
 	stats.LastCode = code
+
+	// Финальный снепшот
+	stats.History = append(stats.History, CodeSnapshot{
+		Timestamp: time.Now().UnixMilli(),
+		Code:      code,
+	})
+
 	r.mu.Unlock()
 	r.broadcastAdminStats()
 
 	go func() {
 		logs, _, success := runGoCode(code, currentTask)
-
 		player.send <- WsResponse{
 			Type: "test_result",
 			Payload: TestExecutionResult{
@@ -174,10 +199,11 @@ func (r *Room) processSubmission(player *Client, code string) {
 				stats.TotalScore += 1
 			}
 		} else {
-			stats.Status = "Failed"
+			if stats.Status != "⚠️ COPIED!" {
+				stats.Status = "Failed"
+			}
 		}
 		r.mu.Unlock()
-
 		r.broadcastAdminStats()
 	}()
 }
